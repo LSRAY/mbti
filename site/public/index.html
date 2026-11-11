@@ -172,9 +172,9 @@ details[open] summary{margin-bottom:10px}
         <p><b>文字决定主导和辅助。</b>不数某个词出现了几次，而是看整段文字反复回到哪个问题、在纠结什么，先定主导：逻辑对不对是 Ti，价值对不对是 Fi，效率行不行是 Te，别人会不会难受是 Fe，未来会怎样是 Ni，还有什么可能是 Ne，过去那个细节忘不掉是 Si，当下感受是什么是 Se。</p>
         <p><b>主导定了，辅助只剩两种。</b>再看主导是用什么方式展开的。比如 Ti 主导，用发散的可能帮自己想清楚是 Ti-Ne，用动手试错、当下细节去验证是 Ti-Se。</p>
         <p><b>直接给 16 组打分。</b>不是给 8 个功能分别打分，而是由 Claude 读完全文，对 16 个主导-辅助组合按整体像不像打 0–10 分。文字会发送到本站服务器并交给 Claude 判断，本站不保存；连接失败时改用浏览器内的本地规则判断。</p>
-        <p><b>文字给 16 组打底分。</b>验证题在这个底分上给全部 16 组加减分；文字没排进前三的组合，也可以靠答题翻上来。</p>
-        <p><b>验证题按当前最可能的几组挑选。</b>题库里有 15 道题，各自能拆开不同的对子：顺序题拆 Ti-Ne / Ne-Ti，能量和场合题拆只差内外倾的 Ni-Te / Te-Ni，信息和回应题拆辅助不同的 Ti-Ne / Ti-Se。每答一题，页面就算出哪道题最能把剩下最可能的几组分开，接着问那一道；至少 3 道计分题，最多 7 道，某一组概率到 85% 就提前结束，最后再用劣势题校验一次。</p>
-        <p>最终分数 = 文字分 + 验证题加减分，在 16 组之间换算成概率。</p>
+        <p><b>文字先选出前三名。</b>验证题不独立定类型，只在这三组里加减分。</p>
+        <p><b>验证题按你的前三名挑选。</b>题库里有 15 道题，各自能拆开不同的对子：顺序题拆 Ti-Ne / Ne-Ti，能量和场合题拆只差内外倾的 Ni-Te / Te-Ni，信息和回应题拆辅助不同的 Ti-Ne / Ti-Se。每答一题，页面就算出哪道题最能把剩下最可能的几组分开，接着问那一道；至少 3 道计分题，最多 7 道，某一组概率到 85% 就提前结束，最后再用劣势题校验一次。</p>
+        <p>最终分数 = 文字分 + 验证题加减分，在三组之间换算成相对概率。</p>
       </div>
     </details>
     <details class="panel" id="explorer">
@@ -434,9 +434,9 @@ const QB = [
    r:["Fi","Ni","Fe","Ti"].map(x=>({r:[["dom:"+x,1.2],["aux:"+x,.6]],e:-.3})),
    why:"拆主导完全不同、但文字里很像的对子，例如 INFJ（Ni-Fe）和 INFP（Fi-Ne）。"},
   {id:"inferior", src:"原题", name:"劣势验证", check:true, q:"哪种事你最拖延、最觉得累，即使别人觉得很简单？",
-   o:["处理别人的情绪，安慰人，维持气氛","处理当下的细节，收拾、执行、按部就班","按标准和 deadline 做事，讲效率","明确表达自己的价值观，做对错判断","把一件事的道理一步步拆开，冷静分析到底谁对谁错","面对没有定论的事，去想各种可能、猜它以后会怎么发展"],
-   target:[["Fe"],["Se","Si"],["Te"],["Fi"],["Ti"],["Ne","Ni"]],
-   why:"验推导出来的劣势对不对：A 是 Fe，B 是 Se / Si，C 是 Te，D 是 Fi，E 是 Ti，F 是 Ne / Ni。对不上只降置信度，不改排名。"}
+   o:["处理别人的情绪，安慰人，维持气氛","处理当下的细节，收拾、执行、按部就班","按标准和 deadline 做事，讲效率","明确表达自己的价值观，做对错判断"],
+   target:[["Fe"],["Se","Si"],["Te"],["Fi"]],
+   why:"验推导出来的劣势对不对：A 是 Fe，B 是 Se / Si，C 是 Te，D 是 Fi。对不上只降置信度，不改排名。"}
 ];
 const QBI = Object.fromEntries(QB.map(q=>[q.id,q]));
 const MIN_Q=3, MAX_Q=7, STOP_P=0.85, TEMP=2.5;
@@ -463,12 +463,10 @@ function evalOpt(q,opt,st){
   return {v:o.e, txt:o.e<0?`${st[0]}-${st[1]} 不符合`:"不区分"};
 }
 function candState(judge,hist){
-  /* one state: every one of the 16 pairs carries text score + question adjustments */
-  const order=PAIRS.slice().sort((a,b)=>judge.scores[b]-judge.scores[a]);
-  const cands=PAIRS.map(p=>{const T=pairType[p];
+  const cands=topPairs(judge).map((p,ti)=>{const T=pairType[p];
     const adj=hist.map(h=>evalOpt(QBI[h.id],h.opt,T.st));
     const qSum=adj.reduce((s,x)=>s+x.v,0);
-    return {pair:p,code:T.code,st:T.st,textRank:order.indexOf(p)+1,t:judge.scores[p],adj,qSum,score:judge.scores[p]+qSum};});
+    return {pair:p,code:T.code,st:T.st,textRank:ti+1,t:judge.scores[p],adj,qSum,score:judge.scores[p]+qSum};});
   const mx=Math.max(...cands.map(c=>c.score)), ex=cands.map(c=>Math.exp((c.score-mx)/TEMP)), Z=ex.reduce((a,b)=>a+b,0);
   cands.forEach((c,i)=>c.p=ex[i]/Z);
   return cands;
@@ -541,8 +539,13 @@ let hist=[], cur=null, pick=null, step=0, draft="", textJudge=null;
 try{ draft=localStorage.getItem("stack-draft")||""; }catch(e){}
 const quiz=document.getElementById("quiz"), qBody=document.getElementById("qBody"), resultEl=document.getElementById("result");
 const prevBtn=document.getElementById("prevBtn"), nextBtn=document.getElementById("nextBtn");
-/* top 3 from text, for display only; all 16 pairs stay live during the questions */
-const topPairs = j => PAIRS.slice().sort((a,b)=>j.scores[b]-j.scores[a]).slice(0,3);
+/* top 3 from text; the order-reversed partner of #1 (Ti-Ne ↔ Ne-Ti) is kept in if it is close, since text can hardly tell them apart */
+const reversed = p => p.split("-").reverse().join("-");
+const topPairs = j => {
+  const s=PAIRS.slice().sort((a,b)=>j.scores[b]-j.scores[a]), t=s.slice(0,3), r=reversed(s[0]);
+  if(!t.includes(r) && j.scores[r]>=0.6*j.scores[s[0]]) t[2]=r;
+  return t;
+};
 const SEGS=2+MAX_Q+1;
 const SHORT_MSG="文字太短，判断的准确度会很低。";
 const LIT_MSG="这段文字看起来像经过修改的作品（有场景、对话或刻意的叙事），判断会不太准。最好即兴写一段你自己最近反复想起的事。";
@@ -581,14 +584,14 @@ function renderStep(){
           <div class="cand-head"><span class="eyebrow">第 ${i+1}</span><span class="typebig">${T.code}</span><span class="mono">${p}</span><span class="pct">${textJudge.scores[p].toFixed(1)}</span></div>
           ${r?`<p style="font-size:14px">${esc(r.dominant)}</p>`:""}
         </div>`;}).join("")}</div>
-      <p class="muted">接下来的验证题会从这三组出发，但全部 16 组都还在候选里：每答一题，就选下一道最能把它们分开的题。至少 ${MIN_Q+1} 题，最多 ${MAX_Q+1} 题，某一组足够明确时会提前结束。每道题都给全部 16 组加减分，文字没排进前三的组合也可能被答题翻上来。</p></div>`;
+      <p class="muted">接下来的验证题会根据这三组之间的差别来挑：每答一题，就选下一道最能把它们分开的题。至少 ${MIN_Q+1} 题，最多 ${MAX_Q+1} 题，某一组足够明确时会提前结束。题目只在这三组里加减分。</p></div>`;
     nextBtn.textContent="开始验证题"; nextBtn.disabled=false; prevBtn.disabled=false;
     const rj=document.getElementById("rejudgeBtn");
     if(rj) rj.addEventListener("click",async()=>{ const ok=await judgeText(draft,true); if(ok){ hist=[]; renderStep(); } });
   } else {
     const Q=QBI[cur.id];
     qBody.innerHTML=`<div style="display:flex;flex-direction:column;gap:16px"><p class="q-title">${Q.q}</p>
-      <div class="opts" role="radiogroup" aria-label="${esc(Q.q)}">${Q.o.map((o,i)=>`<button type="button" class="opt" role="radio" id="q-${Q.id}-${i}" data-i="${i}" aria-checked="${pick===i}"><span class="key">${"ABCDEF"[i]}</span><span>${o}</span></button>`).join("")}</div></div>`;
+      <div class="opts" role="radiogroup" aria-label="${esc(Q.q)}">${Q.o.map((o,i)=>`<button type="button" class="opt" role="radio" id="q-${Q.id}-${i}" data-i="${i}" aria-checked="${pick===i}"><span class="key">${"ABCD"[i]}</span><span>${o}</span></button>`).join("")}</div></div>`;
     nextBtn.textContent = Q.check ? "查看结果" : "下一题";
     nextBtn.disabled = pick===null;
   }
@@ -692,7 +695,7 @@ function renderResult(h,text,judge,isSample){
       <h2>最可能是 ${top.code}，置信度<span style="color:${level[1]}">${level[0]}</span></h2>
       ${judge.note?`<p class="note" style="border-color:var(--warn)">${judge.note}</p>`:""}
       ${shortNote(text)}${litNote(text)}${otherNote(text)}
-      <p class="muted">文字先给全部 16 组打底分，${nQ} 道验证题按当前最可能的几组之间的差别挑选，每题都给 16 组加减分。百分比是 16 组之间的概率，下面列出前三名。${infOk?"":`劣势验证和 ${top.code} 推导出的劣势 ${top.st[3]} 对不上，置信度已下调一档。`}</p>
+      <p class="muted">文字先选出最像的三组，${nQ} 道验证题按这三组之间的差别挑选，只在三组里加减分。百分比是三者之间的相对概率。${infOk?"":`劣势验证和 ${top.code} 推导出的劣势 ${top.st[3]} 对不上，置信度已下调一档。`}</p>
     ${isSample?"":`<div class="btns" style="margin-top:6px">
       <button class="btn" type="button" id="retryBtn">重新测试</button>
       <button class="btn ghost" type="button" id="editBtn">改一改文字</button>
@@ -713,7 +716,7 @@ function renderResult(h,text,judge,isSample){
       <h3>${nQ} 道验证题：为什么问、怎么加减分</h3>
       <div class="tablebox"><table class="map">
         <tr><th>题</th><th>你的选择</th>${cands.map(c=>`<th class="mono">${c.code}</th>`).join("")}</tr>
-        ${h.map((x,qi)=>{const Q=QBI[x.id];return `<tr><td>${qi+1}. ${Q.name}<div class="muted" style="font-size:12px">${x.sep}</div></td><td>${"ABCDEF"[x.opt]}. ${Q.o[x.opt]}</td>${cands.map(c=>`<td>${vCell(c.adj[qi])}<div class="muted" style="font-size:12px">${c.adj[qi].txt}</div></td>`).join("")}</tr>`;}).join("")}
+        ${h.map((x,qi)=>{const Q=QBI[x.id];return `<tr><td>${qi+1}. ${Q.name}<div class="muted" style="font-size:12px">${x.sep}</div></td><td>${"ABCD"[x.opt]}. ${Q.o[x.opt]}</td>${cands.map(c=>`<td>${vCell(c.adj[qi])}<div class="muted" style="font-size:12px">${c.adj[qi].txt}</div></td>`).join("")}</tr>`;}).join("")}
       </table></div>
       <p class="muted" style="font-size:13px">劣势验证只校验劣势，对不上降置信度，不改排名。</p>
     </div>
