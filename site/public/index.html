@@ -439,6 +439,9 @@ const QB = [
    why:"验推导出来的劣势对不对：A 是 Fe，B 是 Se / Si，C 是 Te，D 是 Fi。对不上只降置信度，不改排名。"}
 ];
 const QBI = Object.fromEntries(QB.map(q=>[q.id,q]));
+/* questions Claude wrote for this session, same shape as QB plus fx = per-option points per pair */
+const AIQ = {}; let aiSeq=0;
+const getQ = id => QBI[id] || AIQ[id];
 const MIN_Q=3, MAX_Q=7, STOP_P=0.85, TEMP=2.5;
 const POSN={dom:0,aux:1,tert:2,inf:3};
 const CONDTXT={dom:"主导",aux:"辅助",tert:"第三位",inf:"劣势"};
@@ -458,13 +461,14 @@ function condText(cond,st){
 }
 function evalOpt(q,opt,st){
   if(q.check){ const ok=q.target[opt].includes(st[3]); return {v:0,match:ok,txt:ok?`劣势 ${st[3]}，对得上`:`劣势是 ${st[3]}，对不上`}; }
+  if(q.fx){ const v=q.fx[opt][st[0]+"-"+st[1]]||0; return {v, txt:v>0?"Claude 判断符合":v<0?"Claude 判断不太符合":"不区分"}; }
   const o=q.r[opt];
   for(const [c,v] of o.r) if(condHit(c,st)) return {v,txt:condText(c,st)+(v>0?"，符合":"，不太符合")};
   return {v:o.e, txt:o.e<0?`${st[0]}-${st[1]} 不符合`:"不区分"};
 }
 function candState(judge,hist){
   const cands=topPairs(judge).map((p,ti)=>{const T=pairType[p];
-    const adj=hist.map(h=>evalOpt(QBI[h.id],h.opt,T.st));
+    const adj=hist.map(h=>evalOpt(getQ(h.id),h.opt,T.st));
     const qSum=adj.reduce((s,x)=>s+x.v,0);
     return {pair:p,code:T.code,st:T.st,textRank:ti+1,t:judge.scores[p],adj,qSum,score:judge.scores[p]+qSum};});
   const mx=Math.max(...cands.map(c=>c.score)), ex=cands.map(c=>Math.exp((c.score-mx)/TEMP)), Z=ex.reduce((a,b)=>a+b,0);
@@ -473,7 +477,7 @@ function candState(judge,hist){
 }
 /* pick the unasked question whose answers move the likely candidates furthest apart */
 function nextQuestion(judge,hist){
-  const asked=new Set(hist.map(h=>h.id)), nScored=hist.filter(h=>!QBI[h.id].check).length;
+  const asked=new Set(hist.map(h=>h.id)), nScored=hist.filter(h=>!getQ(h.id).check).length;
   const finish=()=>asked.has("inferior")?null:{id:"inferior",sep:"校验劣势"};
   const cs=candState(judge,hist);
   if(nScored>=MAX_Q) return finish();
@@ -490,10 +494,44 @@ function nextQuestion(judge,hist){
   if(!best||best.info<0.02) return finish();
   return best;
 }
+/* Claude writes the next question from the text, the candidates and the answers so far.
+   Falls back to the fixed bank (nextQuestion) when Claude is unavailable, slow, or cancelled. */
+let askOK=true, askCtl=null;
+async function nextQuestionAI(judge,hist){
+  if(judge.source!=="claude"||!askOK) return nextQuestion(judge,hist);
+  const scored=hist.filter(h=>!getQ(h.id).check), cs=candState(judge,hist);
+  const finish=()=>hist.some(h=>h.id==="inferior")?null:{id:"inferior",sep:"校验劣势"};
+  if(scored.length>=MAX_Q) return finish();
+  if(scored.length>=MIN_Q && Math.max(...cs.map(c=>c.p))>=STOP_P) return finish();
+  askCtl=new AbortController(); const ctl=askCtl;
+  qBody.innerHTML=`<div class="panel fade"><span class="eyebrow">正在出题</span>
+    <h3>Claude 正在根据你的文字和回答想下一道题……</h3>
+    <div class="btns"><button class="btn ghost" type="button" id="cancelAsk">不等了，用固定题库</button></div></div>`;
+  prevBtn.disabled=true; nextBtn.disabled=true;
+  document.getElementById("cancelAsk").addEventListener("click",()=>ctl.abort());
+  const timer=setTimeout(()=>ctl.abort(),30000);
+  try{
+    const r=await fetch("/api/ask",{method:"POST",headers:{"content-type":"application/json"},signal:ctl.signal,
+      body:JSON.stringify({text:draft,candidates:cs.map(c=>c.pair),scores:Object.fromEntries(cs.map(c=>[c.pair,Math.round(c.score*10)/10])),minQ:MIN_Q,
+        history:scored.map(h=>{const Q=getQ(h.id);return {q:Q.q,options:Q.o,pick:h.opt};})})});
+    if(!r.ok) throw new Error("ask "+r.status);
+    const d=await r.json();
+    if(ctl!==askCtl) return undefined;
+    if(d.done) return finish();
+    const q=d.question; if(!q||!Array.isArray(q.o)||q.o.length<2||!Array.isArray(q.fx)) throw new Error("bad question");
+    const id="ai"+(++aiSeq);
+    AIQ[id]={id,src:"Claude 出题",name:String(q.name||"验证题"),q:String(q.q),o:q.o.slice(0,4).map(String),fx:q.fx.slice(0,4),why:String(q.why||"")};
+    return {id,sep:String(q.sep||"")};
+  }catch(e){
+    if(ctl!==askCtl) return undefined;
+    askOK=false;                                         // stay on the fixed bank for the rest of this test
+    return nextQuestion(judge,hist);
+  }finally{ clearTimeout(timer); }
+}
 /* simulate a respondent of a given stack (used for the sample result) */
 function simulate(judge,st){
   const hist=[];let n;
-  while((n=nextQuestion(judge,hist))){const q=QBI[n.id];let bo=0,bv=-1e9;
+  while((n=nextQuestion(judge,hist))){const q=getQ(n.id);let bo=0,bv=-1e9;
     q.o.forEach((_,oi)=>{const r=evalOpt(q,oi,st);const v=q.check?(r.match?1:0):r.v;if(v>bv){bv=v;bo=oi;}});
     hist.push({id:n.id,opt:bo,sep:n.sep});}
   return hist;
@@ -589,7 +627,7 @@ function renderStep(){
     const rj=document.getElementById("rejudgeBtn");
     if(rj) rj.addEventListener("click",async()=>{ const ok=await judgeText(draft,true); if(ok){ hist=[]; renderStep(); } });
   } else {
-    const Q=QBI[cur.id];
+    const Q=getQ(cur.id);
     qBody.innerHTML=`<div style="display:flex;flex-direction:column;gap:16px"><p class="q-title">${Q.q}</p>
       <div class="opts" role="radiogroup" aria-label="${esc(Q.q)}">${Q.o.map((o,i)=>`<button type="button" class="opt" role="radio" id="q-${Q.id}-${i}" data-i="${i}" aria-checked="${pick===i}"><span class="key">${"ABCD"[i]}</span><span>${o}</span></button>`).join("")}</div></div>`;
     nextBtn.textContent = Q.check ? "查看结果" : "下一题";
@@ -647,13 +685,14 @@ const sampleJudge=()=>SAMPLE_JUDGE;
 
 nextBtn.addEventListener("click",async()=>{
   if(step===0){ if(!(await prepareJudge())) return; hist=[]; cur=null; pick=null; step=1; }
-  else if(step===1){ step=2; cur=nextQuestion(textJudge,hist); pick=null; }
-  else { hist.push({id:cur.id,opt:pick,sep:cur.sep}); cur=nextQuestion(textJudge,hist); pick=null;
+  else if(step===1){ const n=await nextQuestionAI(textJudge,hist); if(n===undefined) return; step=2; cur=n; pick=null;
+    if(!cur){ showResult(hist.slice(),draft,textJudge); return; } }
+  else { hist.push({id:cur.id,opt:pick,sep:cur.sep}); const n=await nextQuestionAI(textJudge,hist); if(n===undefined) return; cur=n; pick=null;
     if(!cur){ showResult(hist.slice(),draft,textJudge); return; } }
   renderStep(); quiz.scrollIntoView({behavior:"smooth",block:"start"});
 });
 function startQuiz(){
-  judgeCtl=null; step=0; hist=[]; cur=null; pick=null; resultEl.hidden=true; quiz.hidden=false; renderStep();
+  judgeCtl=null; askCtl=null; askOK=true; step=0; hist=[]; cur=null; pick=null; resultEl.hidden=true; quiz.hidden=false; renderStep();
   quiz.scrollIntoView({behavior:"smooth",block:"start"});
 }
 renderStep();
@@ -716,7 +755,7 @@ function renderResult(h,text,judge,isSample){
       <h3>${nQ} 道验证题：为什么问、怎么加减分</h3>
       <div class="tablebox"><table class="map">
         <tr><th>题</th><th>你的选择</th>${cands.map(c=>`<th class="mono">${c.code}</th>`).join("")}</tr>
-        ${h.map((x,qi)=>{const Q=QBI[x.id];return `<tr><td>${qi+1}. ${Q.name}<div class="muted" style="font-size:12px">${x.sep}</div></td><td>${"ABCD"[x.opt]}. ${Q.o[x.opt]}</td>${cands.map(c=>`<td>${vCell(c.adj[qi])}<div class="muted" style="font-size:12px">${c.adj[qi].txt}</div></td>`).join("")}</tr>`;}).join("")}
+        ${h.map((x,qi)=>{const Q=getQ(x.id);return `<tr><td>${qi+1}. ${Q.name}<div class="muted" style="font-size:12px">${x.sep}</div></td><td>${"ABCD"[x.opt]}. ${Q.o[x.opt]}</td>${cands.map(c=>`<td>${vCell(c.adj[qi])}<div class="muted" style="font-size:12px">${c.adj[qi].txt}</div></td>`).join("")}</tr>`;}).join("")}
       </table></div>
       <p class="muted" style="font-size:13px">劣势验证只校验劣势，对不上降置信度，不改排名。</p>
     </div>
