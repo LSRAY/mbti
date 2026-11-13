@@ -3,6 +3,8 @@
 ## 文件
 - `public/index.html`：网页。提交文字后调用 `/api/judge`，失败时自动改用浏览器内的本地规则。
 - `netlify/functions/judge.mjs`：服务器函数。收到文字后调用 Claude Haiku 5.5，返回 16 组打分和理由。
+- `netlify/functions/ask.mjs`：服务器函数（`/api/ask`）。文字初判之后，每一题都由 Claude 根据文字、候选组合和已答的题现场出题，并给出每个选项对各候选的加减分。连不上、超时或用户点“不等了”时，网页自动改用固定题库。
+- `netlify/lib/method.mjs`：两个函数共用的判断规则、16 组签名和错误处理。
 - `netlify.toml`、`package.json`：Netlify 配置和依赖。
 
 ## 部署步骤
@@ -33,7 +35,9 @@ npx netlify-cli deploy --prod
 ## 部署后检查
 打开网站，写一段文字并提交。文字初判页显示“Claude 整体判读”就说明接通了；显示“本地规则判断”说明函数没接通，先检查环境变量和部署日志。
 
-## 可调的设置（`netlify/functions/judge.mjs`）
+## 可调的设置（`netlify/lib/method.mjs`、`netlify/functions/ask.mjs`）
 - `MODEL`：换模型，例如 `claude-sonnet-5-5`。
 - `MAX_CHARS`：单次文字长度上限，用来限制成本。
+- `ASK_RULES`（`ask.mjs`）：Claude 出题的规则。
+- 题数：`index.html` 里的 `MIN_Q`、`MAX_Q`（默认至少 3 题、最多 7 题，最后再加一道固定的劣势验证题）。
 - `effort: "low"`：思考深度。改成 `"medium"` 更仔细，但更慢、更贵。
