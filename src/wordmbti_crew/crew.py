@@ -31,7 +31,7 @@ def _with_method(cfg: dict) -> dict:
 
 
 def _llm() -> LLM:
-    return LLM(model=os.getenv("MODEL", "anthropic/claude-haiku-5-5"), temperature=0.3)
+    return LLM(model=os.getenv("MODEL", "anthropic/claude-haiku-5-5"))  # Haiku 5.5 等新模型不接受 temperature 参数
 
 
 @CrewBase
