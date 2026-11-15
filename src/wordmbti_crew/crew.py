@@ -5,43 +5,22 @@ from crewai.agents.agent_builder.base_agent import BaseAgent
 from crewai.project import CrewBase, agent, before_kickoff, crew, task
 from pydantic import BaseModel, Field
 
-from wordmbti_crew.method import METHOD, STACKS
+from wordmbti_crew.method import METHOD
+from wordmbti_crew.tools.web_search import ClaudeWebSearchTool
 
-MAX_CHARS = 4000  # 和网站一致：过长的文字截断，控制成本
-
-
-class TopPair(BaseModel):
-    pair: str = Field(description="组合，例如 Ti-Ne")
-    dominant: str = Field(description="一句话：主导是什么，依据是什么")
-    auxiliary: str = Field(description="一句话：辅助是怎么配合主导展开的")
+DEFAULT_FOCUS = "文字最容易判错的几组：Ne-Ti 与 Ni-Fe、Fi-Ne 与 Fe-Ni、Ti-Ne 与 Ni-Te，以及各类型劣势功能在文字里的样子"
 
 
-class Judgement(BaseModel):
-    core: str = Field(description="一句话：这段文字在纠结什么核心问题")
-    scores: dict[str, float] = Field(description="16 组全部的分数，0 到 10")
-    top: list[TopPair] = Field(description="分数最高的 4 组，从高到低")
+class Change(BaseModel):
+    where: str = Field(description="改在 METHOD 的哪一条")
+    before: str = Field(description="原文（新增时写“无”）")
+    after: str = Field(description="新文")
+    reason: str = Field(description="理由，引用审核通过的发现")
 
 
-class Effect(BaseModel):
-    pair: str
-    delta: float
-
-
-class Option(BaseModel):
-    text: str
-    effects: list[Effect]
-
-
-class Question(BaseModel):
-    name: str = Field(description="四到六个字的题名，如“独处验证”")
-    q: str
-    why: str = Field(description="一句话：这道题在区分谁和谁、依据是什么")
-    sep: str = Field(description="例如：区分 INTJ 和 INFJ")
-    options: list[Option]
-
-
-class Questions(BaseModel):
-    questions: list[Question]
+class RuleUpdate(BaseModel):
+    changes: list[Change]
+    new_method: str = Field(description="修改后的 METHOD 全文")
 
 
 def _llm() -> LLM:
@@ -50,7 +29,7 @@ def _llm() -> LLM:
 
 @CrewBase
 class WordmbtiCrew:
-    """四个智能体协作：主导分析 → 写法与劣势分析 → 综合打分 → 出验证题"""
+    """三个智能体协作：上网研究文风 → 审核正确性 → 修改判断规则"""
 
     agents: list[BaseAgent]
     tasks: list[Task]
@@ -59,47 +38,46 @@ class WordmbtiCrew:
     def prepare_inputs(self, inputs):
         inputs = dict(inputs or {})
         payload = inputs.get("crewai_trigger_payload")
-        if not inputs.get("text") and isinstance(payload, dict):
-            inputs["text"] = payload.get("text", "")
-        inputs["text"] = str(inputs.get("text", "")).strip()[:MAX_CHARS]
-        if not inputs["text"]:
-            raise ValueError("缺少输入 text：请传入要分析的文字")
-        inputs.setdefault("num_questions", 3)
+        if isinstance(payload, dict):
+            for k in ("focus", "max_searches"):
+                inputs.setdefault(k, payload.get(k))
+        inputs["focus"] = str(inputs.get("focus") or DEFAULT_FOCUS).strip()[:500]
+        try:
+            inputs["max_searches"] = max(1, min(10, int(inputs.get("max_searches") or 5)))
+        except (TypeError, ValueError):
+            inputs["max_searches"] = 5
         inputs["method"] = METHOD
-        inputs["stacks"] = STACKS
         return inputs
 
     @agent
-    def content_analyst(self) -> Agent:
-        return Agent(config=self.agents_config["content_analyst"], llm=_llm(), verbose=True)  # type: ignore[index]
+    def researcher(self) -> Agent:
+        return Agent(
+            config=self.agents_config["researcher"],  # type: ignore[index]
+            tools=[ClaudeWebSearchTool()],
+            llm=_llm(),
+            max_iter=12,  # 限制工具调用轮数，防止搜个没完
+            verbose=True,
+        )
 
     @agent
-    def style_analyst(self) -> Agent:
-        return Agent(config=self.agents_config["style_analyst"], llm=_llm(), verbose=True)  # type: ignore[index]
+    def validator(self) -> Agent:
+        return Agent(config=self.agents_config["validator"], llm=_llm(), verbose=True)  # type: ignore[index]
 
     @agent
-    def judge(self) -> Agent:
-        return Agent(config=self.agents_config["judge"], llm=_llm(), verbose=True)  # type: ignore[index]
-
-    @agent
-    def question_designer(self) -> Agent:
-        return Agent(config=self.agents_config["question_designer"], llm=_llm(), verbose=True)  # type: ignore[index]
+    def rule_editor(self) -> Agent:
+        return Agent(config=self.agents_config["rule_editor"], llm=_llm(), verbose=True)  # type: ignore[index]
 
     @task
-    def content_task(self) -> Task:
-        return Task(config=self.tasks_config["content_task"])  # type: ignore[index]
+    def research_task(self) -> Task:
+        return Task(config=self.tasks_config["research_task"])  # type: ignore[index]
 
     @task
-    def style_task(self) -> Task:
-        return Task(config=self.tasks_config["style_task"])  # type: ignore[index]
+    def validate_task(self) -> Task:
+        return Task(config=self.tasks_config["validate_task"])  # type: ignore[index]
 
     @task
-    def judge_task(self) -> Task:
-        return Task(config=self.tasks_config["judge_task"], output_pydantic=Judgement)  # type: ignore[index]
-
-    @task
-    def question_task(self) -> Task:
-        return Task(config=self.tasks_config["question_task"], output_pydantic=Questions)  # type: ignore[index]
+    def edit_task(self) -> Task:
+        return Task(config=self.tasks_config["edit_task"], output_pydantic=RuleUpdate)  # type: ignore[index]
 
     @crew
     def crew(self) -> Crew:

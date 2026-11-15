@@ -8,9 +8,8 @@ from wordmbti_crew.crew import WordmbtiCrew
 warnings.filterwarnings("ignore", category=SyntaxWarning, module="pysbd")
 
 SAMPLE = {
-    "text": "我想好了，这毕业证不要了，我只是在错误的路上硬走了两年。明年3月份我就去美国加州，"
-            "机票和房租我都算过了，首先把语言考了，其次把作品集整理好。真是浪费时间。",
-    "num_questions": 3,
+    "focus": "",  # 留空就用默认重点：最容易判错的几组
+    "max_searches": 5,
 }
 
 
@@ -33,7 +32,7 @@ def test():
 
 
 def run_with_trigger():
-    """用触发器传入的 JSON（需要包含 text 字段）运行"""
+    """用触发器传入的 JSON（可包含 focus、max_searches）运行"""
     if len(sys.argv) < 2:
         raise Exception("No trigger payload provided. Please provide JSON payload as argument.")
     try:
