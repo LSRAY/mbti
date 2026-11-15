@@ -5,7 +5,7 @@ research_task:
 
     网站现在的判断规则如下，先读懂它，找出规则里还没写到、或者写得太笼统的地方，再去搜索：
 
-    {method}
+    [[METHOD]]
 
 
     用 web_search 工具搜索，每次只问一个具体问题，总共不超过 {max_searches} 次。
@@ -19,7 +19,7 @@ validate_task:
   description: >
     网站现在的判断规则（包含已确认的四个例子）：
 
-    {method}
+    [[METHOD]]
 
 
     逐条审核研究员的发现，每条给出“通过 / 不通过”和理由。判断标准：
@@ -38,7 +38,7 @@ edit_task:
   description: >
     这是网站现在的判断规则 METHOD 全文：
 
-    {method}
+    [[METHOD]]
 
 
     根据审核员“通过”的发现修改它：
