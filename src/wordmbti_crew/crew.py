@@ -23,6 +23,13 @@ class RuleUpdate(BaseModel):
     new_method: str = Field(description="修改后的 METHOD 全文")
 
 
+def _with_method(cfg: dict) -> dict:
+    """把判断规则直接写进任务说明，而不是用 {method} 占位符（否则 CrewAI 会把它当成必填输入）"""
+    cfg = dict(cfg)
+    cfg["description"] = cfg["description"].replace("[[METHOD]]", METHOD)
+    return cfg
+
+
 def _llm() -> LLM:
     return LLM(model=os.getenv("MODEL", "anthropic/claude-haiku-5-5"), temperature=0.3)
 
@@ -41,12 +48,12 @@ class WordmbtiCrew:
         if isinstance(payload, dict):
             for k in ("focus", "max_searches"):
                 inputs.setdefault(k, payload.get(k))
-        inputs["focus"] = str(inputs.get("focus") or DEFAULT_FOCUS).strip()[:500]
+        focus = str(inputs.get("focus") or "").strip()
+        inputs["focus"] = DEFAULT_FOCUS if focus.lower() in ("", "默认", "default", "-") else focus[:500]
         try:
             inputs["max_searches"] = max(1, min(10, int(inputs.get("max_searches") or 5)))
         except (TypeError, ValueError):
             inputs["max_searches"] = 5
-        inputs["method"] = METHOD
         return inputs
 
     @agent
@@ -69,15 +76,15 @@ class WordmbtiCrew:
 
     @task
     def research_task(self) -> Task:
-        return Task(config=self.tasks_config["research_task"])  # type: ignore[index]
+        return Task(config=_with_method(self.tasks_config["research_task"]))  # type: ignore[index]
 
     @task
     def validate_task(self) -> Task:
-        return Task(config=self.tasks_config["validate_task"])  # type: ignore[index]
+        return Task(config=_with_method(self.tasks_config["validate_task"]))  # type: ignore[index]
 
     @task
     def edit_task(self) -> Task:
-        return Task(config=self.tasks_config["edit_task"], output_pydantic=RuleUpdate)  # type: ignore[index]
+        return Task(config=_with_method(self.tasks_config["edit_task"]), output_pydantic=RuleUpdate)  # type: ignore[index]
 
     @crew
     def crew(self) -> Crew:
