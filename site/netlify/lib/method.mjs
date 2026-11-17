@@ -27,7 +27,7 @@ export const stackOf = pair => { const [d, a] = pair.split("-"); return [d, a, o
 export const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
 
 /** pages on other sites that may call these functions (the GitHub Pages copy of the site) */
-const ALLOWED_ORIGINS = ["https://rayshen-code.github.io",
+const ALLOWED_ORIGINS = ["https://lsray.github.io",
   ...String(process.env.ALLOWED_ORIGINS || "").split(",").map(s => s.trim()).filter(Boolean)];
 
 function originAllowed(origin, host) {
