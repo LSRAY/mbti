@@ -38,7 +38,7 @@ npx netlify-cli deploy --prod
 ## 可调的设置（`netlify/lib/method.mjs`、`netlify/functions/ask.mjs`）
 - `MODEL`：换模型，例如 `claude-sonnet-5-5`。
 - `MAX_CHARS`：单次文字长度上限，用来限制成本。
-- `ASK_RULES`（`ask.mjs`）：Claude 出题的规则。
+- `ASK_RULES`（`ask.mjs`）：Claude 出题的规则。出的题分不开第 1、2 名时会自动重试一次（`MIN_TOP2_GAP`）。
 - 题数：`index.html` 里的 `MIN_Q`、`MAX_Q`（默认至少 3 题、最多 7 题，最后再加一道固定的劣势验证题）。
 - `effort: "low"`：思考深度。改成 `"medium"` 更仔细，但更慢、更贵。
 
@@ -48,3 +48,4 @@ npx netlify-cli deploy --prod
 - GitHub Pages 只能放静态网页，所以 不在 Netlify 上打开的网页（GitHub Pages、以后的自定义域名）都会调用 Netlify 上的 `/api/judge` 和 `/api/ask`（见 `index.html` 里的 `API_BASE`），API key 仍然只放在 Netlify。
 - 函数只接受本站网页和 `https://lsray.github.io` 的请求（`netlify/lib/method.mjs` 里的 `ALLOWED_ORIGINS`）。要再允许别的网址（比如以后买的域名），在 Netlify 的环境变量里加 `ALLOWED_ORIGINS`，多个网址用逗号分开，例如 `https://wordmbti.com,https://www.wordmbti.com`。
 - 第一次使用前，在 GitHub 仓库的 Settings → Pages → Build and deployment → Source 选 **GitHub Actions**。
+- 打开 Netlify 网址首页的人会被 302 跳转到 GitHub Pages（`netlify.toml` 里的 `[[redirects]]`），`/api/*` 不受影响。

@@ -4,3 +4,17 @@
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
+
+# The page itself is served from GitHub Pages (no Netlify badge); Netlify only runs /api/*.
+# Visitors who open the Netlify address are sent there. 302 so browsers do not cache it forever.
+[[redirects]]
+  from = "/"
+  to = "https://lsray.github.io/mbti/"
+  status = 302
+  force = true
+
+[[redirects]]
+  from = "/index.html"
+  to = "https://lsray.github.io/mbti/"
+  status = 302
+  force = true
