@@ -552,8 +552,8 @@ const SAMPLE_JUDGE={source:"claude",core:"那天自己的回应到底哪里出�
 
 
 /* ---------- Claude connection status ---------- */
-/* the GitHub Pages copy has no server functions, so it calls the ones on Netlify */
-const API_BASE = /\.github\.io$/.test(location.hostname) ? "https://lsrmbti.netlify.app" : "";
+/* only Netlify runs the server functions: every other copy of the page (GitHub Pages, a custom domain) calls them there */
+const API_BASE = /(^|\.)netlify\.app$|^localhost$|^127\.0\.0\.1$/.test(location.hostname) ? "" : "https://lsrmbti.netlify.app";
 let sampleState="ready";   // ready | ok | none
 /* asks this site's own server function, which calls Claude; the prompt and the API key live on the server */
 const samplePromise=Promise.resolve({ json: async (text,opts={})=>{

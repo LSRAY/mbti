@@ -43,8 +43,8 @@ npx netlify-cli deploy --prod
 - `effort: "low"`：思考深度。改成 `"medium"` 更仔细，但更慢、更贵。
 
 ## GitHub Pages 版本
-网页同时发布在 GitHub Pages：https://rayshen-code.github.io/wordmbti/
+网页同时发布在 GitHub Pages：https://lsray.github.io/wordmbti/
 - `.github/workflows/pages.yml`：每次 `main` 里的 `site/public` 有改动，就自动把它发布到 GitHub Pages。
-- GitHub Pages 只能放静态网页，所以 Pages 上的网页会调用 Netlify 上的 `/api/judge` 和 `/api/ask`（见 `index.html` 里的 `API_BASE`），API key 仍然只放在 Netlify。
-- 函数只接受本站网页和 `https://rayshen-code.github.io` 的请求（`netlify/lib/method.mjs` 里的 `ALLOWED_ORIGINS`）。要再允许别的网址，在 Netlify 的环境变量里加 `ALLOWED_ORIGINS`，多个网址用逗号分开。
+- GitHub Pages 只能放静态网页，所以 不在 Netlify 上打开的网页（GitHub Pages、以后的自定义域名）都会调用 Netlify 上的 `/api/judge` 和 `/api/ask`（见 `index.html` 里的 `API_BASE`），API key 仍然只放在 Netlify。
+- 函数只接受本站网页和 `https://lsray.github.io` 的请求（`netlify/lib/method.mjs` 里的 `ALLOWED_ORIGINS`）。要再允许别的网址（比如以后买的域名），在 Netlify 的环境变量里加 `ALLOWED_ORIGINS`，多个网址用逗号分开，例如 `https://wordmbti.com,https://www.wordmbti.com`。
 - 第一次使用前，在 GitHub 仓库的 Settings → Pages → Build and deployment → Source 选 **GitHub Actions**。

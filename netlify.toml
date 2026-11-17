@@ -1,0 +1,9 @@
+# The site lives in site/. This file makes Netlify build from there even when the
+# Base directory in the Netlify UI is left empty; site/netlify.toml holds the same settings.
+[build]
+  base = "site"
+  publish = "public"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
