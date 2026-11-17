@@ -2,7 +2,7 @@
 // The API key comes from the ANTHROPIC_API_KEY environment variable set in Netlify (never in code).
 import { z } from "zod";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
-import { MODEL, MAX_CHARS, PAIRS, METHOD, json, guard, client, apiError } from "../lib/method.mjs";
+import { MODEL, MAX_CHARS, PAIRS, METHOD, json, guard, withCors, client, apiError } from "../lib/method.mjs";
 
 export const config = { path: "/api/judge" };
 
@@ -14,7 +14,7 @@ const Judgement = z.object({
   top: z.array(z.object({ pair: z.enum(PAIRS), dominant: z.string(), auxiliary: z.string() })),
 });
 
-export default async (req) => {
+export default withCors(async (req) => {
   const blocked = guard(req); if (blocked) return blocked;
   let text;
   try { text = String((await req.json()).text ?? "").trim(); } catch { return json(400, { error: "bad_request" }); }
@@ -33,4 +33,4 @@ export default async (req) => {
     if (!response.parsed_output) return json(502, { error: "no_output" });
     return json(200, response.parsed_output);
   } catch (err) { return apiError(err); }
-};
+});

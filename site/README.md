@@ -41,3 +41,10 @@ npx netlify-cli deploy --prod
 - `ASK_RULES`（`ask.mjs`）：Claude 出题的规则。
 - 题数：`index.html` 里的 `MIN_Q`、`MAX_Q`（默认至少 3 题、最多 7 题，最后再加一道固定的劣势验证题）。
 - `effort: "low"`：思考深度。改成 `"medium"` 更仔细，但更慢、更贵。
+
+## GitHub Pages 版本
+网页同时发布在 GitHub Pages：https://rayshen-code.github.io/wordmbti/
+- `.github/workflows/pages.yml`：每次 `main` 里的 `site/public` 有改动，就自动把它发布到 GitHub Pages。
+- GitHub Pages 只能放静态网页，所以 Pages 上的网页会调用 Netlify 上的 `/api/judge` 和 `/api/ask`（见 `index.html` 里的 `API_BASE`），API key 仍然只放在 Netlify。
+- 函数只接受本站网页和 `https://rayshen-code.github.io` 的请求（`netlify/lib/method.mjs` 里的 `ALLOWED_ORIGINS`）。要再允许别的网址，在 Netlify 的环境变量里加 `ALLOWED_ORIGINS`，多个网址用逗号分开。
+- 第一次使用前，在 GitHub 仓库的 Settings → Pages → Build and deployment → Source 选 **GitHub Actions**。
