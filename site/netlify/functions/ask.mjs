@@ -3,21 +3,20 @@
 // and returns one multiple-choice question whose options add or subtract points per candidate.
 import { z } from "zod";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
-import { MODEL, MAX_CHARS, PAIRS, SIGS, METHOD, stackOf, json, guard, withCors, client, apiError } from "../lib/method.mjs";
+import { MODEL, MAX_CHARS, PAIRS, SIGS, CODE, METHOD, stackOf, json, guard, withCors, client, apiError } from "../lib/method.mjs";
 
 export const config = { path: "/api/ask" };
 
 const MAX_HISTORY = 12;
 const MAX_DELTA = 2;
 const POS = ["主导", "辅助", "第三位", "劣势"];
-const CODE = {"Ti-Ne":"INTP","Ti-Se":"ISTP","Te-Ni":"ENTJ","Te-Si":"ESTJ","Fi-Ne":"INFP","Fi-Se":"ISFP","Fe-Ni":"ENFJ","Fe-Si":"ESFJ",
-  "Ni-Fe":"INFJ","Ni-Te":"INTJ","Ne-Ti":"ENTP","Ne-Fi":"ENFP","Si-Te":"ISTJ","Si-Fe":"ISFJ","Se-Ti":"ESTP","Se-Fi":"ESFP"};
+const MAX_CANDS = 6;     // the page sends its six best pairs; questions are written to separate them
 const MIN_TOP2_GAP = 1.5;   // some option must move #1 and #2 at least this far apart
 
 const ASK_RULES = `你现在的任务不是给文字打分，而是出验证题。文字初判已经选出了几个候选组合，你要用选择题把它们分开。
 
 出题规则：
-1. 最优先区分当前第 1 名和第 2 名：下面会列出它们功能栈的具体差别，先从这些差别里挑一个。只有在 <已问过的区分> 里已经问过它们的同一个差别时，才换别的差别或去区分第 3 名。文字天然看不清的是：内倾还是外倾主导、判断功能和知觉功能谁在前、劣势是什么。
+1. 最优先区分当前第 1 名和第 2 名：下面会列出它们功能栈的具体差别，先从这些差别里挑一个。只有在 <已问过的区分> 里已经问过它们的同一个差别时，才换别的差别或去区分第 3 名。文字天然看不清的是：内倾还是外倾主导、判断功能和知觉功能谁在前、劣势是什么，以及 J/P（前两位里外倾的是判断功能 Te / Fe，还是知觉功能 Ne / Se）和 Te 还是 Fe（先看标准效率，还是先顾人和气氛）。
 1b. <已问过的区分> 里列出的区分点不要再问，换个说法问同一件事也算重复。
 2. 一次只问一个差别。问题问日常的真实行为和第一反应，不要用任何术语（不要出现 Ti、Fe、内倾、直觉、MBTI 这些词）。
 3. 可以引用用户文字里的具体事情作为情境来问（例如“你在文字里提到……，当时你更接近？”），但不要复述文字里的隐私细节超过一句。文字里提到的其他人一律称为“对方”，不要猜性别写成“他”或“她”。
@@ -69,7 +68,7 @@ export default withCors(async (req) => {
   try { body = await req.json(); } catch { return json(400, { error: "bad_request" }); }
 
   let text = str(body.text, MAX_CHARS).trim();
-  const cands = (Array.isArray(body.candidates) ? body.candidates : []).filter(p => PAIRS.includes(p)).slice(0, 4);
+  const cands = (Array.isArray(body.candidates) ? body.candidates : []).filter(p => PAIRS.includes(p)).slice(0, MAX_CANDS);
   const scores = body.scores && typeof body.scores === "object" ? body.scores : {};
   const minQ = Math.max(0, Math.min(10, Number(body.minQ) || 3));
   const history = (Array.isArray(body.history) ? body.history : []).slice(0, MAX_HISTORY).map(h => ({
