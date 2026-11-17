@@ -1,51 +1,202 @@
-# 推断你的MBTI人格 · Netlify 部署包（Claude Haiku 5.5）
+# 推断你的MBTI人格
 
-## 文件
-- `public/index.html`：网页。提交文字后调用 `/api/judge`，失败时自动改用浏览器内的本地规则。
-- `netlify/functions/judge.mjs`：服务器函数。收到文字后调用 Claude Haiku 5.5，返回 16 组打分和理由。
-- `netlify/functions/ask.mjs`：服务器函数（`/api/ask`）。文字初判之后，每一题都由 Claude 根据文字、候选组合和已答的题现场出题，并给出每个选项对各候选的加减分。连不上、超时或用户点“不等了”时，网页自动改用固定题库。
-- `netlify/lib/method.mjs`：两个函数共用的判断规则、16 组签名和错误处理。
-- `netlify.toml`、`package.json`：Netlify 配置和依赖。
+用一段自己写的文字，加上几道自适应的验证题，推断写作者的 MBTI 类型。判断基于荣格八维的**功能栈**：先判断主导功能和辅助功能，其余位置由它们推出。
 
-## 部署步骤
-1. 在 https://console.anthropic.com 创建 API key，并在 Console 里设置每月消费上限。
-2. 在 Netlify 打开你的站点 → Site configuration → Environment variables，新增：
-   - Key：`ANTHROPIC_API_KEY`
-   - Value：你的 API key
-3. 在电脑上安装 Node.js，然后在本文件夹里运行：
+- 网站：https://lsray.github.io/mbti/
+- API：https://lsrmbti.netlify.app/api/judge 和 `/api/ask`（直接打开 Netlify 网址首页会跳转到上面的网站）
+- 模型：Claude Haiku 5.5
+
+---
+
+## 一、用户看到的流程
+
+1. **写一段文字**：最好 150 字以上，写自己最近反复想起的一件事。草稿保存在浏览器里，刷新不会丢。
+2. **文字初判**：列出最像的三组"主导 + 辅助"组合（例如 INTP = Ti-Ne），并附上判断依据。
+3. **验证题**：3 到 7 道选择题，每道都针对这三组之间的差别来问；最后再加一道固定的"劣势验证"题。
+4. **结果**：最可能的类型、置信度、三个候选的相对概率、每道题给每个候选加减了多少分，以及 16 组的文字打分。
+
+页面上还有"先看一份示例结果"按钮，以及"这套测试怎么算分""推导规则"两个说明区，用户可以自己选主导和辅助，看功能栈是怎么推出来的。
+
+---
+
+## 二、判断规则
+
+### 1. 功能栈：为什么只判断"主导 + 辅助"
+
+八个功能：Ti、Te、Fi、Fe（判断功能），Si、Se、Ni、Ne（知觉功能）。
+
+- **主导**定了，**辅助**只有两种可能：类型相反（判断对知觉），态度也相反（内倾对外倾）。所以一共只有 16 种组合，正好对应 16 个类型。
+- **第三位**是辅助翻转：类型和态度都反过来（Ti-Ne 的第三位是 Si）。
+- **劣势**是主导翻转（Ti-Ne 的劣势是 Fe）。
+
+例：INTP = Ti-Ne-Si-Fe，ENTP = Ne-Ti-Fe-Si。两者用的功能一样，只是顺序不同。
+
+### 2. 第一步：读文字，给 16 组打分
+
+**正常情况：由 Claude 判断**（`/api/judge`，规则写在 `netlify/lib/method.mjs` 的 `METHOD` 里）
+
+- **定主导**：看整段文字在为什么而写、在纠结什么核心问题，不看出现了哪些词。
+  逻辑对不对 = Ti，价值对不对 = Fi，效率行不行 = Te，别人会不会难受 = Fe，未来会怎样 = Ni，还有什么可能 = Ne，过去的细节忘不掉 = Si，当下感受是什么 = Se。
+- **定辅助**：看主导是用什么方式展开的。例如 Ti 主导，用发散的可能来想清楚是 Ti-Ne，用动手试错来验证是 Ti-Se。
+- **看写法**：作者怎么在想法之间移动，比写了什么更重要。例如跨领域的类比是 Ne，冷静精确的叙述、"不是……而是……"是 Ti。
+- **注意 loop 和劣势**：在痛苦和执念里，最显眼的往往是第三位和劣势。例如反复分析、回放过去却没有结论，是 Ti-Si loop，更可能是 INTP，而不是 Si 主导。
+- **只看作者本人**：文字里写的别人的特点不算作者的；经过打磨的叙事作品场景多，不能因此判成知觉主导。
+- 规则里附了四个已确认的例子，帮 Claude 理解方法。
+- Claude 给 16 组各打 0 到 10 分，写出"这段文字在纠结什么"，以及前 4 组的主导、辅助依据。
+
+**备用：浏览器里的本地规则**（`index.html` 里的 `localJudge`）
+
+在 Claude 连不上、超时或用户点"不等了"时使用。它把关键词计数（反复纠结的句子、开头和结尾的句子权重更高）、一个按字符片段打分的小模型、句式线索和 loop/劣势线索加在一起。**准确度很低**（见第六节），页面会标出"本地规则判断"。
+
+**选出三个候选**：取分数最高的三组。如果第 1 名的"顺序反过来"那组（例如 Ti-Ne 对 Ne-Ti）分数达到第 1 名的 60%，就用它替换第 3 名，因为文字很难分清这两组。
+
+**页面上的提醒**（不改分数，只提示可能不准）：
+- 少于 150 字；
+- 像经过修改的叙事作品（700 字以上，且有较多对话或第三人称）；
+- 主要在写别人（"他/她"出现 10 次以上，且是"我"的 3 倍以上）。
+
+### 3. 第二步：验证题
+
+**正常情况：由 Claude 现场出题**（`/api/ask`，规则写在 `netlify/functions/ask.mjs` 的 `ASK_RULES` 里）
+
+每一题，网页会把这些发给 Claude：文字、三个候选的当前分数和完整功能栈、第 1 名和第 2 名的功能栈差别、已经问过的区分点、已答的题和答案。Claude 按以下规则出题：
+
+- 最优先区分第 1 名和第 2 名；已经问过的区分点不能再问。
+- 一次只问一个差别，问日常行为和第一反应，不出现术语。
+- 可以引用文字里的事情作为情境，文字里的其他人一律称"对方"。
+- 2 到 4 个选项，要一样体面，不能有明显的"好答案"，也不能复述用户在文字里已经做过的事。
+- 每个选项给每个候选打 −2 到 +2 分，必须能用功能栈解释。
+
+服务器会检查：格式不对的题丢掉，分数限制在 ±2；如果没有任何选项能让第 1、2 名相差 1.5 分以上，就让 Claude 重出一次。
+
+**备用：固定题库**（`index.html` 里的 `QB`，16 道题）
+
+Claude 出题失败、超过 30 秒或用户点"不等了，用固定题库"时，这次测试剩下的题改用题库。每次从没问过的题里挑"最能把当前三个候选分开"的那一道。
+
+**什么时候结束**
+- 至少 3 题，最多 7 题；
+- 答满 3 题后，如果某个候选的概率达到 85%，或者 Claude 判断已经明显领先，就提前结束；
+- 最后固定加一道**劣势验证**题：问用户最累、最拖延的是哪类事，看是否符合第 1 名推出来的劣势。它**不改排名**，对不上只把置信度降一档。
+
+### 4. 第三步：算分和置信度
+
+- **总分** = 文字分（0 到 10）+ 各验证题的加减分。
+- **概率**：只在三个候选之间比较，按总分换算（softmax，温度 2.5），三者加起来是 100%。
+- **置信度**看第 1 名的概率：
+  - 75% 以上：高
+  - 50% 到 74%：较高
+  - 25% 到 49%：中等
+  - 低于 25%：低
+  - 劣势验证对不上：再降一档。
+
+---
+
+## 三、整体架构
+
+```
+用户浏览器
+  │  打开网页
+  ▼
+GitHub Pages  ── https://lsray.github.io/mbti/  （只有静态网页，没有 Netlify 标识）
+  │  网页调用 API（跨站请求）
+  ▼
+Netlify 函数  ── https://lsrmbti.netlify.app/api/judge、/api/ask  （保管 API key）
+  │
+  ▼
+Claude API（Haiku 5.5）
+```
+
+- **为什么分两处**：GitHub Pages 只能放静态网页，不能运行服务器函数，也不能保存 API key。API key 写进网页会被任何人看到并盗用，所以 Claude 调用放在 Netlify 函数里。
+- **网页去哪里调用 API**（`index.html` 里的 `API_BASE`）：在 Netlify 或本机上打开时调用本站的 `/api/...`；其他地方（GitHub Pages、以后的自定义域名）都调用 `https://lsrmbti.netlify.app`。
+- **谁可以调用 API**（`netlify/lib/method.mjs` 里的 `withCors` 和 `ALLOWED_ORIGINS`）：只接受 Netlify 站点本身和 `https://lsray.github.io` 的网页，其他网站的网页请求一律返回 403。注意这只能挡住别的网站在浏览器里调用，挡不住有人直接用脚本调用，所以一定要在 Anthropic Console 设置每月消费上限。
+- **Netlify 首页跳转**：`netlify.toml` 里把 `/` 和 `/index.html` 用 302 跳转到 GitHub Pages，`/api/*` 不受影响。
+
+---
+
+## 四、文件
+
+| 文件 | 作用 |
+|---|---|
+| `public/index.html` | 整个网页：界面、本地规则、固定题库、算分、结果页 |
+| `netlify/functions/judge.mjs` | `/api/judge`：文字 → 16 组打分和理由 |
+| `netlify/functions/ask.mjs` | `/api/ask`：出下一道验证题 |
+| `netlify/lib/method.mjs` | 两个函数共用：判断规则 `METHOD`、16 组签名、功能栈推导、跨站规则、错误处理 |
+| `netlify.toml` | Netlify 配置：发布目录、函数目录、首页跳转。仓库根目录还有一份同样的配置，并设置 `base = "site"` |
+| `package.json` | 依赖：`@anthropic-ai/sdk`、`zod` |
+| `../.github/workflows/pages.yml` | 把 `public/` 发布到 GitHub Pages |
+
+---
+
+## 五、部署和维护
+
+### GitHub Pages（网页）
+- 合并到 `main` 后，只要 `site/public` 有改动，就会自动发布，大约 1 分钟生效。进度在仓库的 **Actions** 页面看。
+- 仓库的 **Settings → Pages → Source** 必须是 **GitHub Actions**。
+- 要手动重新发布：**Actions → Deploy to GitHub Pages → Run workflow**。
+
+### Netlify（API）
+- 站点连接 GitHub 仓库 `LSRAY/mbti` 的 `main` 分支，合并后自动部署。
+- **Environment variables** 必须有 `ANTHROPIC_API_KEY`。要允许更多网址调用 API（比如以后买的域名），加 `ALLOWED_ORIGINS`，多个网址用逗号分开，例如 `https://wordmbti.com,https://www.wordmbti.com`。
+- 站点的访问权限要设为**公开**，否则网页和 API 都会要求登录 Netlify。
+- 免费额度用完时，Netlify 会暂停生产部署：网站和 API 还能用，但跑的是旧代码，部署记录显示 **Skipped**。这时只能等下个计费周期、升级付费版，或者换账号部署。
+
+### 部署后检查
+1. 打开 https://lsray.github.io/mbti/ ，写一段文字提交。
+2. 文字初判页显示"Claude 整体判读"，说明 `/api/judge` 通了；显示"本地规则判断"，说明没通，检查 Netlify 的环境变量、部署记录和访问权限。
+3. 点"开始验证题"，出现"Claude 正在根据你的文字和回答想下一道题……"，然后是引用你文字内容的题，说明 `/api/ask` 通了；如果出现"周末完全没有安排的时候，你更接近？"这类题库原题，说明改用了固定题库。
+
+### 本地运行
+```bash
+cd site
+```
 
 ```bash
 npm install
 ```
 
 ```bash
-npx netlify-cli login
+npx netlify-cli dev
 ```
 
-```bash
-npx netlify-cli link
-```
+`netlify dev` 会同时运行网页和两个函数。需要在本机设置 `ANTHROPIC_API_KEY` 环境变量，或者先用 `netlify link` 关联站点，读取站点上的环境变量。
 
-```bash
-npx netlify-cli deploy --prod
-```
+---
 
-`link` 时选择已有的站点（wordmbti）。带服务器函数的站点要用命令行或 Git 仓库部署；只拖拽上传 `index.html` 不会部署函数，网页会一直使用本地规则。
+## 六、可调的设置
 
-## 部署后检查
-打开网站，写一段文字并提交。文字初判页显示“Claude 整体判读”就说明接通了；显示“本地规则判断”说明函数没接通，先检查环境变量和部署日志。
+| 设置 | 位置 | 说明 |
+|---|---|---|
+| `MODEL` | `netlify/lib/method.mjs` | 模型，例如改成 `claude-sonnet-5-5` 更准，但更慢、更贵 |
+| `MAX_CHARS` | `netlify/lib/method.mjs` | 文字长度上限（4000 字），超出部分截掉，用来控制费用 |
+| `METHOD` | `netlify/lib/method.mjs` | 文字判断规则 |
+| `ASK_RULES` | `netlify/functions/ask.mjs` | 出题规则 |
+| `MIN_TOP2_GAP` | `netlify/functions/ask.mjs` | 题目必须让第 1、2 名拉开的最小分差（1.5），达不到就重出一次 |
+| `effort` | `judge.mjs`、`ask.mjs` | 思考深度，现在是 `"low"`；改成 `"medium"` 更仔细，但更慢、更贵 |
+| `MIN_Q`、`MAX_Q` | `public/index.html` | 验证题数（3 到 7，另加劣势验证） |
+| `STOP_P` | `public/index.html` | 提前结束的概率门槛（0.85） |
+| `TEMP` | `public/index.html` | 分数换算成概率的温度（2.5），越小结果越"果断" |
+| `ALLOWED_ORIGINS` | `method.mjs` 或 Netlify 环境变量 | 允许调用 API 的网址 |
+| `API_BASE` | `public/index.html` | 非 Netlify 网页调用的 API 地址；Netlify 网址变了要改这里 |
 
-## 可调的设置（`netlify/lib/method.mjs`、`netlify/functions/ask.mjs`）
-- `MODEL`：换模型，例如 `claude-sonnet-5-5`。
-- `MAX_CHARS`：单次文字长度上限，用来限制成本。
-- `ASK_RULES`（`ask.mjs`）：Claude 出题的规则。出的题分不开第 1、2 名时会自动重试一次（`MIN_TOP2_GAP`）。
-- 题数：`index.html` 里的 `MIN_Q`、`MAX_Q`（默认至少 3 题、最多 7 题，最后再加一道固定的劣势验证题）。
-- `effort: "low"`：思考深度。改成 `"medium"` 更仔细，但更慢、更贵。
+---
 
-## GitHub Pages 版本
-网页同时发布在 GitHub Pages：https://lsray.github.io/mbti/
-- `.github/workflows/pages.yml`：每次 `main` 里的 `site/public` 有改动，就自动把它发布到 GitHub Pages。
-- GitHub Pages 只能放静态网页，所以 不在 Netlify 上打开的网页（GitHub Pages、以后的自定义域名）都会调用 Netlify 上的 `/api/judge` 和 `/api/ask`（见 `index.html` 里的 `API_BASE`），API key 仍然只放在 Netlify。
-- 函数只接受本站网页和 `https://lsray.github.io` 的请求（`netlify/lib/method.mjs` 里的 `ALLOWED_ORIGINS`）。要再允许别的网址（比如以后买的域名），在 Netlify 的环境变量里加 `ALLOWED_ORIGINS`，多个网址用逗号分开，例如 `https://wordmbti.com,https://www.wordmbti.com`。
-- 第一次使用前，在 GitHub 仓库的 Settings → Pages → Build and deployment → Source 选 **GitHub Actions**。
-- 打开 Netlify 网址首页的人会被 302 跳转到 GitHub Pages（`netlify.toml` 里的 `[[redirects]]`），`/api/*` 不受影响。
+## 七、速度、费用和准确度
+
+**速度**：文字判断约 5 到 15 秒；每道 Claude 题约 4 到 13 秒（需要重出时更久）。
+
+**费用**：每次测试调用 Claude 4 到 9 次（1 次判断，3 到 7 次出题，偶尔重试）。用 Haiku 的话费用很低，具体以 Anthropic Console 的用量为准。
+
+**准确度现状**：2026 年 11 月用 5 位历史人物的 13 篇文章（鲁迅、陈独秀、李大钊、孙中山、蒋介石）测试了文字判断，"正确答案"用的是 Personality Database 上的网友投票：
+
+| | 4 个字母全对 | 正确类型在前三 |
+|---|---|---|
+| 本地规则 | 0 / 13 | 4 / 13 |
+| Claude（同一批文章测两遍） | 1 / 26 | 9 / 26 |
+
+这次测试有明显局限：网友投票不是本人测试结果；文章是一百年前的论说文和演讲，和网站要的个人随笔差别很大；样本也少。但至少说明：**单靠一段文字很难判准**，结果主要还得靠验证题来校正。
+
+**已知问题**
+- Claude 出题有时会换个说法重复问同一个区分点；
+- 不少题靠第三位功能来区分，这类分数可信度一般。
+
+**下一步**：最可靠的改进方法是收集真人反馈。在结果页问"你之前测过的类型是？这次准吗？"，用真实数据来衡量和调整规则。

@@ -1,6 +1,6 @@
 # wordmbti
 
-- `site/`：Netlify 网站（原样保留，部署方式不变，见 `site/README.md`）。
+- `site/`：网站。网页发布在 GitHub Pages（https://lsray.github.io/mbti/），调用 Claude 的 API 放在 Netlify。运行规则、架构和部署见 `site/README.md`。
 - 根目录：CrewAI 多智能体项目 `wordmbti_crew`，用于在 CrewAI 平台部署。
 
 ## CrewAI 多智能体：改进判断规则
