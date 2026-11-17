@@ -511,7 +511,7 @@ async function nextQuestionAI(judge,hist){
   document.getElementById("cancelAsk").addEventListener("click",()=>ctl.abort());
   const timer=setTimeout(()=>ctl.abort(),30000);
   try{
-    const r=await fetch("/api/ask",{method:"POST",headers:{"content-type":"application/json"},signal:ctl.signal,
+    const r=await fetch(API_BASE+"/api/ask",{method:"POST",headers:{"content-type":"application/json"},signal:ctl.signal,
       body:JSON.stringify({text:draft,candidates:cs.map(c=>c.pair),scores:Object.fromEntries(cs.map(c=>[c.pair,Math.round(c.score*10)/10])),minQ:MIN_Q,
         history:scored.map(h=>{const Q=getQ(h.id);return {q:Q.q,options:Q.o,pick:h.opt};})})});
     if(!r.ok) throw new Error("ask "+r.status);
@@ -552,13 +552,15 @@ const SAMPLE_JUDGE={source:"claude",core:"那天自己的回应到底哪里出�
 
 
 /* ---------- Claude connection status ---------- */
+/* the GitHub Pages copy has no server functions, so it calls the ones on Netlify */
+const API_BASE = /\.github\.io$/.test(location.hostname) ? "https://lsrmbti.netlify.app" : "";
 let sampleState="ready";   // ready | ok | none
 /* asks this site's own server function, which calls Claude; the prompt and the API key live on the server */
 const samplePromise=Promise.resolve({ json: async (text,opts={})=>{
   const ctl=new AbortController(), timer=setTimeout(()=>ctl.abort(),30000);
   if(opts.signal) opts.signal.addEventListener("abort",()=>ctl.abort());
   try{
-    const r=await fetch("/api/judge",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text}),signal:ctl.signal});
+    const r=await fetch(API_BASE+"/api/judge",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text}),signal:ctl.signal});
     if(!r.ok){ const body=await r.json().catch(()=>({})); throw {code: r.status===429?"rate_limited":(r.status===404||body.error==="not_configured")?"unavailable":"upstream_error"}; }
     return await r.json();
   }catch(e){

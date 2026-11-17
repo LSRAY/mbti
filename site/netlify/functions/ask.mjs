@@ -3,7 +3,7 @@
 // and returns one multiple-choice question whose options add or subtract points per candidate.
 import { z } from "zod";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
-import { MODEL, MAX_CHARS, PAIRS, SIGS, METHOD, stackOf, json, guard, client, apiError } from "../lib/method.mjs";
+import { MODEL, MAX_CHARS, PAIRS, SIGS, METHOD, stackOf, json, guard, withCors, client, apiError } from "../lib/method.mjs";
 
 export const config = { path: "/api/ask" };
 
@@ -58,7 +58,7 @@ function clean(q, cands) {
   return { name: str(q.name, 12) || "验证题", q: str(q.q, 160), why: str(q.why, 200), sep: str(q.sep, 40), o: options.map(o => o.text), fx: options.map(o => o.fx) };
 }
 
-export default async (req) => {
+export default withCors(async (req) => {
   const blocked = guard(req); if (blocked) return blocked;
   let body;
   try { body = await req.json(); } catch { return json(400, { error: "bad_request" }); }
@@ -98,4 +98,4 @@ export default async (req) => {
     if (!q) return json(502, { error: "no_output" });
     return json(200, { done: false, question: q });
   } catch (err) { return apiError(err); }
-};
+});

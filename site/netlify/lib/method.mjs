@@ -26,12 +26,31 @@ export const stackOf = pair => { const [d, a] = pair.split("-"); return [d, a, o
 
 export const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
 
+/** pages on other sites that may call these functions (the GitHub Pages copy of the site) */
+const ALLOWED_ORIGINS = ["https://rayshen-code.github.io",
+  ...String(process.env.ALLOWED_ORIGINS || "").split(",").map(s => s.trim()).filter(Boolean)];
+
+function originAllowed(origin, host) {
+  if (!origin) return true;                        // not a browser call from another page
+  if (ALLOWED_ORIGINS.includes(origin)) return true;
+  try { return new URL(origin).host === host; } catch { return false; }
+}
+
+/** wraps a function so the site's own pages and the allowed sites can call it, and every other page is refused */
+export const withCors = handler => async (req) => {
+  const origin = req.headers.get("origin");
+  if (!originAllowed(origin, req.headers.get("host"))) return json(403, { error: "forbidden" });
+  const cors = origin ? { "access-control-allow-origin": origin, "vary": "origin" } : {};
+  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: { ...cors,
+    "access-control-allow-methods": "POST", "access-control-allow-headers": "content-type", "access-control-max-age": "86400" } });
+  const res = await handler(req);
+  for (const [k, v] of Object.entries(cors)) res.headers.set(k, v);
+  return res;
+};
+
 /** null when the request may proceed, otherwise the error response */
 export function guard(req) {
   if (req.method !== "POST") return json(405, { error: "method_not_allowed" });
-  // only accept calls from this site's own pages
-  const origin = req.headers.get("origin"), host = req.headers.get("host");
-  if (origin && host && new URL(origin).host !== host) return json(403, { error: "forbidden" });
   if (!process.env.ANTHROPIC_API_KEY) return json(503, { error: "not_configured" });
   return null;
 }
