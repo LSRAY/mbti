@@ -513,7 +513,7 @@ async function nextQuestionAI(judge,hist){
   try{
     const r=await fetch(API_BASE+"/api/ask",{method:"POST",headers:{"content-type":"application/json"},signal:ctl.signal,
       body:JSON.stringify({text:draft,candidates:cs.map(c=>c.pair),scores:Object.fromEntries(cs.map(c=>[c.pair,Math.round(c.score*10)/10])),minQ:MIN_Q,
-        history:scored.map(h=>{const Q=getQ(h.id);return {q:Q.q,options:Q.o,pick:h.opt};})})});
+        history:scored.map(h=>{const Q=getQ(h.id);return {q:Q.q,options:Q.o,pick:h.opt,sep:h.sep||""};})})});
     if(!r.ok) throw new Error("ask "+r.status);
     const d=await r.json();
     if(ctl!==askCtl) return undefined;
